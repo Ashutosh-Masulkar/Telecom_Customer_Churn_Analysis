@@ -1,0 +1,1898 @@
+---
+title: "Final Project-Telecom Churn Prediction"
+author: "Ashutosh Masulkar"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+**You are working for a telecommunications company in their customer analytics team. Your manager wants you to analyze customer data and provide insights for retaining existing customers. A big part of customer relationship management involves efforts to retain existing customers. Note that the costs incurred to attract new customers are much larger than the costs to retain existing customers. As part of the class project, your goal is to analyze customer data and identify the ones that are likely to leave so that you can take some action to retain them by offering incentives. The data is spread over two .rda files, Model_Building_Data and Implementation_Data. Model_Building_Data should be used to build the model. It contains current customers as well as customers who have left. The description of the columns in this dataset is below:**
+
+ - 1. Status:    If it is a Current customer or someone who has Left. 
+ - 2. SeniorCitizen: Whether the customer is a senior citizen or not (1, 0)
+ - 3. Partner: Has a partner (Yes, No)
+ - 4. Dependents:    Has dependents (Yes, No)
+ - 5. Tenure: Number of months with the company
+ - 6. PhoneService:    Has a phone service (Yes, No)
+ - 7. MultipleLines:    Has multiple lines (Yes, No, No phone service)
+ - 8. InternetService:    Customer's Internet Service Provider (DSL, Fiber optic, No)
+ - 9. OnlineSecurity:    Customer has online security or not (Yes, No, No internet service)
+ - 10. DeviceProtection:    Customer has device protection or not (Yes, No, No internet service)
+ - 11. Contract:    The contract term of the customer (Month-to-month, One year, Two year)
+ - 12. PaperlessBilling:    Customer has paperless billing or not (Yes, No)
+ - 13. PaymentMethod:    The customer's payment method (Electronic check, Mailed check, Bank transfer (automatic), Credit card (automatic))
+ - 14. MonthlyCharges:    The amount charged to the customer monthly
+ - 15. TotalCharges:    The total amount charged to the customer
+ - 16. Gender:    Male, Female
+
+# **1. Data preparation and Exploratory Data Analysis**
+
+```{r}
+# Load the dataset
+load("Model_Building_Data.rda")
+```
+
+```{r}
+# Load required libraries
+library(dplyr)
+library(tidyverse)
+
+# Use glimpse to view variable types and preview values
+glimpse(Model_Building_Data)
+
+
+```
+
+We are converting `Status` and `SeniorCitizen` to factors because both are categorical variables — `Status` is the target label for classification, and `SeniorCitizen` is a binary (0/1) feature that should be treated as a category, not a numeric scale.
+
+```{r}
+# Convert the target variable 'Status' from character to factor
+# This allows classification models to treat it as a category 
+Model_Building_Data$Status <- as.factor(Model_Building_Data$Status)
+
+# Convert 'SeniorCitizen' from integer (0/1) to factor
+# 0 = Not a senior, 1 = Senior — it's a binary category, not a numeric trend
+# Treating it as a factor helps models understand it's a yes/no type variable
+Model_Building_Data$SeniorCitizen <- as.factor(Model_Building_Data$SeniorCitizen)
+
+# Check the updated structure of the dataset after conversions
+glimpse(Model_Building_Data)
+
+```
+
+
+```{r}
+# Check total missing values column-wise
+# This helps identify which variables (if any) have NA values
+colSums(is.na(Model_Building_Data))
+
+```
+
+
+```{r}
+# Remove rows with missing values (11 rows have missing TotalCharges)
+# This is a safe choice since only a small number of rows are affected
+Model_Building_Data <- na.omit(Model_Building_Data)
+
+# Re-check to confirm missing values are gone
+colSums(is.na(Model_Building_Data))
+
+```
+We removed 11 rows with missing values in `TotalCharges` using `na.omit()` to ensure the dataset is clean and ready for modeling. Since only a small number of rows are affected we have choosen to remove them.
+
+
+```{r}
+# Summary statistics for numerical variables
+summary(Model_Building_Data[, c("Tenure", "MonthlyCharges", "TotalCharges")])
+
+# Standard deviation for numeric variables
+sapply(Model_Building_Data[, c("Tenure", "MonthlyCharges", "TotalCharges")], sd)
+
+# Frequency tables for a few categorical variables
+table(Model_Building_Data$Contract)
+table(Model_Building_Data$PaymentMethod)
+table(Model_Building_Data$InternetService)
+
+```
+
+
+```{r}
+# Load ggplot2 for plotting
+library(ggplot2)
+
+```
+
+
+```{r}
+# Plot 1: Gender Distribution
+# This bar plot shows how many male and female customers are in the dataset.
+ggplot(Model_Building_Data, aes(x = Gender)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Distribution of Gender", x = "Gender", y = "Count") +
+  theme_minimal()
+
+```
+
+The dataset has a nearly equal number of male and female customers.
+
+
+```{r}
+# Distribution of customer status (Current or Left)
+ggplot(Model_Building_Data, aes(x = Status)) +
+  geom_bar(fill = "skyblue") +
+  labs(title = "Customer Status Distribution", x = "Status", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The dataset contains more current customers than those who have left.
+
+
+```{r}
+# Distribution of Senior Citizen status (0 = Not a senior, 1 = Senior)
+ggplot(Model_Building_Data, aes(x = SeniorCitizen)) +
+  geom_bar(fill = "orange") +
+  labs(title = "Senior Citizen Status", x = "Senior Citizen (0 = No, 1 = Yes)", y = "Count") +
+  theme_minimal()
+
+```
+
+ - Most customers in the dataset are not senior citizens.
+
+
+```{r}
+# Distribution of Partner status (Yes or No)
+ggplot(Model_Building_Data, aes(x = Partner)) +
+  geom_bar(fill = "mediumorchid") +
+  labs(title = "Partner Status", x = "Has Partner", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The number of customers with and without partners is fairly balanced, with slightly more customers not having a partner. This suggests that both partnered and unpartnered individuals are well represented in the customer base.
+
+
+
+```{r}
+# Distribution of Dependents (Yes or No)
+ggplot(Model_Building_Data, aes(x = Dependents)) +
+  geom_bar(fill = "darkorange") +
+  labs(title = "Dependents Status", x = "Has Dependents", y = "Count") +
+  theme_minimal()
+
+
+```
+
+ - A clear majority of customers do not have dependents, indicating that the typical customer may be single or living without family members who rely on them financially.
+
+
+```{r}
+# Distribution of tenure
+# This histogram shows how long customers have stayed with the company (in months).
+ggplot(Model_Building_Data, aes(x = Tenure)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Customer Tenure", x = "Tenure (Months)", y = "Count") +
+  theme_minimal()
+
+```
+
+ - The tenure distribution is U-shaped, with a large number of new customers (0–5 months) and a second peak of long-term customers (around 70 months). The number of customers in the mid-tenure range is noticeably lower, indicating that churn or contract changes may commonly occur during the middle months of service.
+
+
+```{r}
+# Distribution of Phone Service
+# This bar plot shows how many customers have phone service versus those who do not.
+ggplot(Model_Building_Data, aes(x = PhoneService)) +
+  geom_bar(fill = "mediumseagreen") +
+  labs(title = "Distribution of Phone Service", x = "Phone Service", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The majority of customers have phone service, while only a small portion do not.
+
+
+```{r}
+# Distribution of Multiple Lines
+# This bar plot shows how many customers have multiple phone lines, do not have them, or have no phone service.
+ggplot(Model_Building_Data, aes(x = MultipleLines)) +
+  geom_bar(fill = "darkgoldenrod1") +
+  labs(title = "Distribution of Multiple Lines", x = "Multiple Lines", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - Customers are fairly evenly split between having a single line and multiple lines. A small group has no phone service.
+
+```{r}
+# Distribution of Internet Service
+# This bar plot shows the types of internet services customers are subscribed to.
+ggplot(Model_Building_Data, aes(x = InternetService)) +
+  geom_bar(fill = "cornflowerblue") +
+  labs(title = "Distribution of Internet Service", x = "Internet Service Type", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The most common internet service type among customers is Fiber optic, followed by DSL. A smaller group does not subscribe to any internet service.
+
+
+```{r}
+# Distribution of Online Security
+# This bar plot shows how many customers have online security, don't have it, or have no internet service.
+ggplot(Model_Building_Data, aes(x = OnlineSecurity)) +
+  geom_bar(fill = "indianred2") +
+  labs(title = "Distribution of Online Security", x = "Online Security", y = "Count") +
+  theme_minimal()
+
+
+```
+
+
+ - A large portion of customers do not have online security. Many others either have the service or don’t have internet service at all.
+
+
+```{r}
+# Distribution of Device Protection
+# This bar plot shows how many customers have device protection, do not have it, or have no internet service.
+ggplot(Model_Building_Data, aes(x = DeviceProtection)) +
+  geom_bar(fill = "deepskyblue3") +
+  labs(title = "Distribution of Device Protection", x = "Device Protection", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - Most customers either do not have device protection or do not use internet service. A smaller portion has opted for device protection.
+
+
+```{r}
+# Distribution of Contract Types
+# This bar plot shows the number of customers based on their contract length.
+ggplot(Model_Building_Data, aes(x = Contract)) +
+  geom_bar(fill = "darkslateblue") +
+  labs(title = "Distribution of Contract Type", x = "Contract Type", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - Most customers are on month-to-month contracts, while fewer are on one-year or two-year contracts.
+
+
+```{r}
+# Distribution of Paperless Billing
+# This bar plot shows how many customers have enabled paperless billing.
+ggplot(Model_Building_Data, aes(x = PaperlessBilling)) +
+  geom_bar(fill = "tomato") +
+  labs(title = "Distribution of Paperless Billing", x = "Paperless Billing", y = "Count") +
+  theme_minimal()
+
+
+```
+
+
+ - A majority of customers have opted for paperless billing.
+
+
+
+```{r}
+# Distribution of Payment Methods
+# This bar plot shows the number of customers using each payment method.
+ggplot(Model_Building_Data, aes(x = PaymentMethod)) +
+  geom_bar(fill = "goldenrod") +
+  labs(title = "Distribution of Payment Methods", x = "Payment Method", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+```
+
+
+ - Electronic check is the most commonly used payment method, followed by mailed check. Automatic payment methods like bank transfer and credit card are slightly less common.
+
+
+```{r}
+# Distribution of Monthly Charges
+# This histogram shows how much customers are charged monthly.
+ggplot(Model_Building_Data, aes(x = MonthlyCharges)) +
+  geom_histogram(binwidth = 5, fill = "mediumturquoise", color = "white") +
+  labs(title = "Distribution of Monthly Charges", x = "Monthly Charges ($)", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The distribution of monthly charges is bimodal, with a large concentration of customers paying around $20 and a relatively even spread of customers paying between $ 30 and $100. This suggests distinct pricing tiers or service levels among customers.
+
+
+```{r}
+# Distribution of Total Charges
+# This histogram shows the total amount charged to customers over their entire tenure.
+ggplot(Model_Building_Data, aes(x = TotalCharges)) +
+  geom_histogram(binwidth = 250, fill = "mediumpurple", color = "white") +
+  labs(title = "Distribution of Total Charges", x = "Total Charges ($)", y = "Count") +
+  theme_minimal()
+
+```
+
+
+ - The distribution of total charges is highly right-skewed. Most customers have paid under $2,000 over their entire tenure, while a smaller group has significantly higher total charges, likely due to longer relationships or higher service usage.
+
+
+
+ - Churn refers to the situation when a customer leaves or stops using a company’s service.
+
+ - In our project, churn is represented by:
+
+Status = "Left" → the customer has churned
+Status = "Current" → the customer is still with the company
+
+
+```{r}
+
+# Plot: Distribution of Status (Current vs Left)
+ggplot(Model_Building_Data, aes(x = Status)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Customer Churn Distribution",
+       x = "Customer Status", y = "Count") +
+  theme_minimal()
+
+```
+
+
+
+ - Out of 6,488 customers, 4,757 (73.3%) are current customers, while 1,731 (26.7%) have churned. This class imbalance shows that although most customers stay, over a quarter have left — making churn a critical issue for the business to address through retention efforts.
+
+
+```{r}
+
+# Plot: Churn distribution by contract type
+ggplot(Model_Building_Data, aes(x = Contract, fill = Status)) +
+  geom_bar(position = "fill") +  # This gives proportional stacked bars
+  labs(title = "Churn Rate by Contract Type",
+       x = "Contract Type", y = "Proportion") +
+  theme_minimal()
+
+```
+
+
+ - This chart shows that customers on **month-to-month contracts** have the highest churn rate. In contrast, those with **one-year and especially two-year contracts** are far more likely to stay with the company. This indicates that longer contract durations contribute significantly to customer retention.
+
+
+```{r}
+# Plot: Churn rate by OnlineSecurity status
+ggplot(Model_Building_Data, aes(x = OnlineSecurity, fill = Status)) +
+  geom_bar(position = "fill") +  # Proportional stacked bars
+  labs(title = "Churn Rate by Online Security",
+       x = "Online Security Service", y = "Proportion") +
+  theme_minimal()
+
+```
+
+
+ - Customers without online security services have the highest churn rate. In contrast, those who subscribe to online security are much more likely to stay. This indicates that security services may increase customer stickiness and could be a useful retention lever.
+
+
+```{r}
+# Plot: Churn rate by customer tenure
+ggplot(Model_Building_Data, aes(x = Tenure, fill = Status)) +
+  geom_histogram(binwidth = 5, position = "fill") +  # stacked by proportion
+  labs(title = "Churn Rate by Customer Tenure",
+       x = "Tenure (Months)", y = "Proportion") +
+  theme_minimal()
+
+```
+
+ - Customers who have recently joined the company (tenure < 12 months) are significantly more likely to churn. As tenure increases, the churn rate steadily declines, indicating that longer-tenure customers are more loyal. This suggests that the first few months of a customer's lifecycle are critical for retention.
+
+
+
+```{r}
+# Plot: Churn rate by senior citizen status
+ggplot(Model_Building_Data, aes(x = SeniorCitizen, fill = Status)) +
+  geom_bar(position = "fill") +
+  labs(title = "Churn Rate by Senior Citizen Status",
+       x = "Senior Citizen (0 = No, 1 = Yes)", y = "Proportion") +
+  theme_minimal()
+
+```
+
+
+ - Senior citizens have a significantly higher churn rate than non-senior customers. This suggests that age-related factors such as support needs, digital accessibility, or pricing sensitivity could influence customer retention and should be considered in retention strategies.
+
+
+```{r}
+
+# Plot: Churn rate by type of Internet Service
+ggplot(Model_Building_Data, aes(x = InternetService, fill = Status)) +
+  geom_bar(position = "fill") +  # Shows proportion of churn per service type
+  labs(title = "Churn Rate by Internet Service Type",
+       x = "Internet Service", y = "Proportion") +
+  theme_minimal()
+
+```
+
+
+ - Customers using **Fiber optic** internet service have the highest churn rate, with nearly half having left the company. In contrast, churn is significantly lower among those with **DSL** or **no internet service**. This suggests that Fiber optic customers may face pricing or service issues that contribute to higher dissatisfaction and churn.
+
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate sample row indices for training (80% of the data)
+train_indices <- sample(nrow(Model_Building_Data), 0.8 * nrow(Model_Building_Data))
+
+# Split the dataset
+train_data <- Model_Building_Data[train_indices, ]
+test_data  <- Model_Building_Data[-train_indices, ]
+
+```
+
+
+# **2.Logistic Regression**
+
+
+**Model 1** 
+
+```{r}
+# Logistic regression model using Status as the response variable
+log_model_full <- glm(Status ~ SeniorCitizen + Partner + Dependents + Tenure + PhoneService +
+                        MultipleLines + InternetService + OnlineSecurity + DeviceProtection +
+                        Contract + PaperlessBilling + PaymentMethod + MonthlyCharges +
+                        TotalCharges + Gender,
+                      data = train_data,
+                      family = "binomial")
+
+```
+
+
+```{r}
+summary(log_model_full)
+
+```
+
+
+ - The logistic regression model was used to identify factors influencing whether a customer remains with or leaves the company.
+
+Significant factors associated with customers discontinuing service:
+
+ - **Shorter tenure**: Customers with fewer months of service are more likely to leave.
+ 
+ - **Fiber optic internet**: Customers using this service are more likely to discontinue.
+ 
+ - **No phone service**: Associated with a higher chance of leaving.
+ 
+ - **No online security**: Strongly linked to customer departure.
+ 
+ - **Month-to-month contracts**: Customers on these plans are more likely to discontinue, compared to those with one- or two-year contracts.
+ 
+ - **Electronic check payment**: This method is associated with a higher departure rate.
+ 
+ - **Lower total charges**: Often linked with newer or less-engaged customers.
+
+Factors that were not statistically significant:
+
+ - **Gender**
+ 
+ - **Partner status**
+ 
+ - **Having dependents**
+ 
+ - **Mailed check payment**
+ 
+ - **Credit card payment**
+ 
+ - **Device protection**
+
+**Note:** Some factor levels (e.g., “No phone service” under MultipleLines) were automatically excluded by R due to multicollinearity with other variables. These exclusions are expected and do not affect model integrity.
+
+ - This model suggests that contract length, tenure, and service features like phone and online security play a critical role in customer retention.
+
+
+```{r}
+# Predict probabilities from the full model
+predicted_probs <- predict(log_model_full, newdata = test_data, type = "response")
+
+```
+
+
+```{r}
+
+# Load the pROC package
+library(pROC)
+
+# Predict probabilities on the test set
+predicted_probs <- predict(log_model_full, newdata = test_data, type = "response")
+
+# Generate ROC curve and calculate AUC
+roc_obj <- roc(test_data$Status, predicted_probs)
+
+# Print AUC
+auc(roc_obj)
+
+# Plot ROC curve
+plot(roc_obj, col = "blue", main = "ROC Curve - Full Logistic Regression Model")
+
+
+```
+
+  - The logistic regression model achieved an AUC of 0.8446
+ 
+**Model 2**
+
+```{r}
+# Model 2
+log_model_reduced <- glm(Status ~ SeniorCitizen + Tenure + PhoneService + MultipleLines +
+                          InternetService + OnlineSecurity + Contract + PaperlessBilling +
+                          PaymentMethod + MonthlyCharges + TotalCharges,
+                        data = train_data,
+                        family = "binomial")
+
+summary(log_model_reduced)
+```
+
+ 
+ - SeniorCitizen1 (+0.291):
+On average, being a senior citizen increases the log-odds of a customer leaving by 0.291, holding all other variables constant.
+ - Tenure (–0.0693):
+ On average, for each additional month of tenure, the log-odds of a customer leaving decrease by 0.0693, holding all other variables constant.
+ - PhoneServiceYes (–0.8410):
+On average, having phone service decreases the log-odds of a customer leaving by 0.8410, compared to not having phone service, holding all other variables constant.
+ - MultipleLinesYes (+0.2521):
+On average, having multiple lines increases the log-odds of a customer leaving by 0.2521, compared to having a single line, holding all other variables constant.
+ - InternetServiceFiber optic (+0.8072):
+On average, using fiber optic internet increases the log-odds of a customer leaving by 0.8072, compared to DSL, holding all other variables constant.
+ - InternetServiceNo (–0.5271):
+On average, having no internet service decreases the log-odds of a customer leaving by 0.5271, compared to DSL, holding all other variables constant.
+ - OnlineSecurityYes (–0.5711):
+On average, having online security decreases the log-odds of a customer leaving by 0.5711, compared to not having online security, holding all other variables constant.
+ - ContractOne year (–0.6808):
+On average, having a one-year contract decreases the log-odds of a customer leaving by 0.6808, compared to a month-to-month contract, holding all other variables constant.
+ - ContractTwo year (–1.3490):
+On average, having a two-year contract decreases the log-odds of a customer leaving by 1.3490, compared to a month-to-month contract, holding all other variables constant.
+ - PaperlessBillingYes (+0.2849):
+On average, using paperless billing increases the log-odds of a customer leaving by 0.2849, compared to receiving paper bills, holding all other variables constant.
+ - PaymentMethodElectronic check (+0.4293):
+On average, using electronic check as a payment method increases the log-odds of a customer leaving by 0.4293, compared to the reference category (e.g., bank transfer), holding all other variables constant.
+ - TotalCharges (–0.0004):
+On average, for each one-dollar increase in total charges, the log-odds of a customer leaving decrease by 0.0004, holding all other variables constant.
+
+```{r}
+# Predict probabilities
+reduced_probs <- predict(log_model_reduced, newdata = test_data, type = "response")
+
+# AUC with pROC
+library(pROC)
+roc_reduced <- roc(test_data$Status, reduced_probs)
+auc(roc_reduced)
+
+# Plot ROC
+plot(roc_reduced, col = "darkgreen", main = "ROC Curve - Reduced Model")
+
+
+```
+
+After trying several model;
+- The logistic regression model achieved an AUC of 0.8446 which is highest so we will proceed with this.
+
+
+
+
+```{r}
+# Step 1: Predict probabilities from logistic regression model
+log_probs <- predict(log_model_reduced, newdata = test_data, type = "response")
+```
+
+
+```{r}
+# Threshold = 0.4
+log_preds_th0.4 <- ifelse(log_probs > 0.4, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.4:\n")
+print(table(log_preds_th0.4, test_data$Status))
+cat("Prediction Accuracy (0.4):", mean(log_preds_th0.4 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.5
+log_preds_th0.5 <- ifelse(log_probs > 0.5, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.5:\n")
+print(table(log_preds_th0.5, test_data$Status))
+cat("Prediction Accuracy (0.5):", mean(log_preds_th0.5 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.6
+log_preds_th0.6 <- ifelse(log_probs > 0.6, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.6:\n")
+print(table(log_preds_th0.6, test_data$Status))
+cat("Prediction Accuracy (0.6):", mean(log_preds_th0.6 == test_data$Status), "\n\n")
+
+```
+
+```{r}
+# Create summary data frame
+logit_threshold_df <- data.frame(
+  Threshold = c(0.4, 0.5, 0.6),
+  Accuracy = c(0.7996918, 0.8027735, 0.7927581)
+)
+
+# View the table
+print(logit_threshold_df)
+
+```
+
+
+ - We evaluated the logistic regression model (`log_model_reduced`;Model 2) at multiple probability thresholds to determine the best cutoff for prediction. As shown in the table below, the threshold of **0.5** yielded the highest prediction accuracy of **80.28%**.
+
+
+# **3.Naive Bayes**
+
+```{r}
+# Load the package to access Naive Bayes
+library(e1071)
+library(ggplot2)
+```
+
+
+```{r}
+# Load ggplot2 if not already loaded
+library(ggplot2)
+
+# Histogram for Tenure
+ggplot(Model_Building_Data) +
+  geom_histogram(aes(x = Tenure), bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Tenure", x = "Tenure (Months)", y = "Count")
+
+# Histogram for MonthlyCharges
+ggplot(Model_Building_Data) +
+  geom_histogram(aes(x = MonthlyCharges), bins = 30, fill = "darkorange", color = "white") +
+  labs(title = "Distribution of Monthly Charges", x = "Monthly Charges ($)", y = "Count")
+
+# Histogram for TotalCharges
+ggplot(Model_Building_Data) +
+  geom_histogram(aes(x = TotalCharges), bins = 30, fill = "seagreen", color = "white") +
+  labs(title = "Distribution of Total Charges", x = "Total Charges ($)", y = "Count")
+
+```
+
+
+1. Tenure Histogram
+Shape: U-shaped (many customers with low tenure, and a spike again around 70 months)
+Custom Bins Used:
+Short < 20
+Medium = 20 to 50
+Long > 50
+Good binning choice: separates early, mid, and loyal customers.
+2. MonthlyCharges Histogram
+Shape: Right-skewed, with a heavy concentration around $20–$40
+Custom Bins Used:
+Low < 35
+Medium = 35 to 85
+High > 85
+Logical: captures discount/basic plans, standard range, and premium/high-bill customers.
+3. TotalCharges Histogram
+Shape: Strong right skew — lots of low values, few high-value customers
+Custom Bins Used:
+Low < 1500
+Medium = 1500 to 5000
+High > 5000
+Well-matched: separates low-lifetime-value customers from medium and high tiers.
+
+
+```{r}
+
+
+# create binned variables after train-test split
+train_data <- train_data %>%
+  mutate(
+    Tenure_binned = ifelse(Tenure < 20, "Short",
+                     ifelse(Tenure > 50, "Long", "Medium")),
+    MonthlyCharges_binned = ifelse(MonthlyCharges < 35, "Low",
+                             ifelse(MonthlyCharges > 85, "High", "Medium")),
+    TotalCharges_binned = ifelse(TotalCharges < 1500, "Low",
+                           ifelse(TotalCharges > 5000, "High", "Medium"))
+  ) %>%
+  mutate(
+    Tenure_binned = as.factor(Tenure_binned),
+    MonthlyCharges_binned = as.factor(MonthlyCharges_binned),
+    TotalCharges_binned = as.factor(TotalCharges_binned)
+  )
+
+test_data <- test_data %>%
+  mutate(
+    Tenure_binned = ifelse(Tenure < 20, "Short",
+                     ifelse(Tenure > 50, "Long", "Medium")),
+    MonthlyCharges_binned = ifelse(MonthlyCharges < 35, "Low",
+                             ifelse(MonthlyCharges > 85, "High", "Medium")),
+    TotalCharges_binned = ifelse(TotalCharges < 1500, "Low",
+                           ifelse(TotalCharges > 5000, "High", "Medium"))
+  ) %>%
+  mutate(
+    Tenure_binned = as.factor(Tenure_binned),
+    MonthlyCharges_binned = as.factor(MonthlyCharges_binned),
+    TotalCharges_binned = as.factor(TotalCharges_binned)
+  )
+
+
+```
+
+
+```{r}
+str(Model_Building_Data)
+```
+
+
+
+ 
+ **Model L1**
+
+```{r}
+# Full Naive Bayes model with all relevant variables
+nb_model_full <- naiveBayes(Status ~ SeniorCitizen + Partner + Dependents + PhoneService +
+                            MultipleLines + InternetService + OnlineSecurity + DeviceProtection +
+                            StreamingMovies + Contract + PaperlessBilling + PaymentMethod + Gender +
+                            Tenure_binned + MonthlyCharges_binned + TotalCharges_binned,
+                            data = train_data,
+                            laplace = 0.01)
+
+# View summary
+nb_model_full
+
+
+```
+
+
+
+```{r}
+library(pROC)
+
+# Predict probabilities for "Left"
+nb_probs_full <- predict(nb_model_full, newdata = test_data, type = "raw")[, "Left"]
+
+# Compute ROC object
+nb_roc_full <- roc(response = test_data$Status,
+                   predictor = nb_probs_full,
+                   levels = c("Current", "Left"),
+                   direction = "<")
+
+# Plot the ROC curve
+plot(nb_roc_full, main = "Naive Bayes – Full Model ROC Curve", col = "darkred", lwd = 3)
+
+# Show AUC value
+auc(nb_roc_full)
+
+
+```
+
+ - AUC for this model = 0.8239
+ 
+ **Model N2**
+
+```{r}
+
+# Train Naive Bayes model 
+model_r <- naiveBayes(Status ~ Tenure_binned + MonthlyCharges_binned + TotalCharges_binned +
+                      Contract + InternetService + OnlineSecurity + MultipleLines +
+                      PhoneService + PaperlessBilling + PaymentMethod +
+                      SeniorCitizen + StreamingMovies + Partner,
+                      data = train_data, laplace = 0.01)
+
+
+model_r
+```
+
+
+```{r}
+## Predict probabilities for "Left"
+probs_r <- predict(model_r, newdata = test_data, type = "raw")[, "Left"]
+
+# Compute ROC object
+roc_r <- roc(response = test_data$Status,
+             predictor = probs_r,
+             levels = c("Current", "Left"),
+             direction = "<")
+
+# Plot the ROC curve
+plot(roc_r, main = "Naive Bayes – Model R", col = "darkgreen", lwd = 3)
+
+# Show AUC value
+auc(roc_r)
+
+
+```
+
+
+ - AUC for this model = 0.8316
+ 
+ - We will use moodel_r ( after removing some varaibles to achieve highest AUC) for further analysis.
+
+
+```{r}
+# Step 1: Get posterior probabilities from Model R
+probs_r_all <- predict(model_r, newdata = test_data, type = "raw")
+probs_r_left <- probs_r_all[, "Left"]  # probability of customer leaving
+```
+
+
+```{r}
+# Threshold = 0.5
+pred_r_th0.5 <- ifelse(probs_r_left > 0.5, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.5:\n")
+print(table(pred_r_th0.5, test_data$Status))
+cat("Prediction Accuracy (0.5):", mean(pred_r_th0.5 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.7
+pred_r_th0.7 <- ifelse(probs_r_left > 0.7, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.7:\n")
+print(table(pred_r_th0.7, test_data$Status))
+cat("Prediction Accuracy (0.7):", mean(pred_r_th0.7 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.8
+pred_r_th0.8 <- ifelse(probs_r_left > 0.8, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.8:\n")
+print(table(pred_r_th0.8, test_data$Status))
+cat("Prediction Accuracy (0.8):", mean(pred_r_th0.8 == test_data$Status), "\n\n")
+
+
+```
+
+
+
+
+
+```{r}
+# Create data frame with prediction accuracy at each threshold
+nb_threshold_results <- data.frame(
+  Threshold = c(0.5, 0.7, 0.8),
+  Accuracy = c(0.7673344, 0.7865948, 0.7904468)
+)
+
+# Print the summary
+print(nb_threshold_results)
+
+
+```
+
+
+
+ - We evaluated Model 2 at multiple probability thresholds to determine the cutoff that yields the highest prediction accuracy. As shown above, a threshold of **0.8** produced the best accuracy of **79.04%**, outperforming other values:
+
+
+# **4. Linear Discriminant Analysis**
+
+
+```{r}
+library(MASS)
+
+```
+
+ 
+
+ - Model R1
+```{r}
+# Build the full LDA model
+lda_model_full <- lda(Status ~ SeniorCitizen + Partner + Dependents + Tenure + 
+                      PhoneService + MultipleLines + InternetService + 
+                      OnlineSecurity + DeviceProtection + Contract + 
+                      PaperlessBilling + PaymentMethod + MonthlyCharges + 
+                      TotalCharges + Gender,
+                      data = train_data)
+
+```
+
+
+```{r}
+# Predict on test data
+lda_pred_full <- predict(lda_model_full, newdata = test_data)
+
+# Extract probabilities for class "Left"
+probs_full <- lda_pred_full$posterior[, "Left"]
+
+# Generate ROC curve
+roc_full <- roc(response = test_data$Status,
+                predictor = probs_full,
+                levels = c("Current", "Left"),
+                direction = "<")
+
+# Plot ROC curve
+plot(roc_full, main = "ROC – Full LDA Model", col = "purple", lwd = 2)
+
+# Show AUC
+auc(roc_full)
+
+
+```
+
+- We are getting warning as variables are collinear using all the predictors, we will try to know such predictors and resolve the issue of multicollinearity.
+
+```{r}
+# This will select only numeric columns from train_data
+numeric_vars <- train_data %>%
+  select_if(is.numeric)
+
+# View names of numeric variables
+names(numeric_vars)
+```
+
+
+```{r}
+# Compute correlation matrix
+cor_matrix <- cor(numeric_vars)
+
+# View correlation matrix
+round(cor_matrix, 2)
+
+```
+
+
+ - The correlation between Tenure and TotalCharges is very high (0.82), indicating potential multicollinearity.
+ - Similarly, TotalCharges is moderately correlated with MonthlyCharges (0.65).
+
+
+ - Handling categorical varaibles
+
+```{r}
+table(train_data$PhoneService, train_data$MultipleLines)
+table(train_data$InternetService, train_data$OnlineSecurity)
+
+```
+ -There seems to be Perfect multicollinearity  between service-related variables (e.g., MultipleLines and PhoneService, OnlineSecurity and InternetService)
+
+ - Handling Multicollinearity in LDA Model
+ - While building the Linear Discriminant Analysis (LDA) model, we initially encountered a warning:
+
+ - To address multicollinearity among highly correlated variables (e.g., Tenure, MonthlyCharges, and TotalCharges), we avoid including all of them in the same model. Instead, we experiment with different combinations — adding one while removing others — to find the best-performing model based on AUC, while ensuring model stability and interpretability.
+ 
+ 
+ - We will try to build model to get highest AUC while handling multicollinearity.
+
+
+
+
+```{r}
+# Model R2: Keep MonthlyCharges + TotalCharges, remove Tenure
+lda_model_r2 <- lda(Status ~ SeniorCitizen + Partner + Dependents +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + MonthlyCharges + 
+                    TotalCharges + Gender,
+                    data = train_data)
+```
+
+
+```{r}
+lda_model_r2 <- lda(Status ~ SeniorCitizen + Partner + Dependents +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + MonthlyCharges + 
+                    TotalCharges + Gender,
+                    data = train_data)
+
+lda_pred_r2 <- predict(lda_model_r2, newdata = test_data)
+probs_r <- lda_pred_r2$posterior[, "Left"]
+
+roc_r2 <- roc(response = test_data$Status,
+              predictor = probs_r,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+plot(roc_r2, main = "ROC – LDA Model R2", col = "darkgreen", lwd = 2)
+auc(roc_r2)
+
+```
+
+ - Area under the curve: 0.8402
+
+
+```{r}
+# Model R3: Keep Tenure + TotalCharges, remove MonthlyCharges
+lda_model_r3 <- lda(Status ~ SeniorCitizen + Partner + Dependents +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + Tenure +
+                    TotalCharges + Gender,
+                    data = train_data)
+```
+
+
+```{r}
+lda_model_r3 <- lda(Status ~ SeniorCitizen + Partner + Dependents +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + Tenure +
+                    TotalCharges + Gender,
+                    data = train_data)
+
+lda_pred_r3 <- predict(lda_model_r3, newdata = test_data)
+probs_r3 <- lda_pred_r3$posterior[, "Left"]
+
+roc_r3 <- roc(response = test_data$Status,
+              predictor = probs_r3,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+plot(roc_r3, main = "ROC – LDA Model R3", col = "orange", lwd = 2)
+auc(roc_r3)
+
+```
+ - Area under the curve: 0.839
+
+```{r}
+# Model R4: Add TotalCharges, drop Dependents
+lda_model_r4 <- lda(Status ~ SeniorCitizen + Partner +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + Tenure +
+                    MonthlyCharges + TotalCharges + Gender,
+                    data = train_data)
+```
+
+
+```{r}
+lda_model_r4 <- lda(Status ~ SeniorCitizen + Partner +
+                    PhoneService + InternetService + Contract +
+                    PaperlessBilling + PaymentMethod + Tenure +
+                    MonthlyCharges + TotalCharges + Gender,
+                    data = train_data)
+
+lda_pred_r4 <- predict(lda_model_r4, newdata = test_data)
+probs_r4 <- lda_pred_r4$posterior[, "Left"]
+
+roc_r4 <- roc(response = test_data$Status,
+              predictor = probs_r4,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+plot(roc_r4, main = "ROC – LDA Model R4", col = "red", lwd = 2)
+auc(roc_r4)
+
+```
+ - Area under the curve: 0.8405
+ 
+ 
+ - We will proceed with model with highest AUC which in this case is model_r4 with AUC of 0.8405.
+ 
+ - Summary Output for model_r4
+ 
+
+```{r}
+lda_model_r4 
+```
+
+ - Making Predictions
+ 
+```{r}
+# Step 1: Get posterior probabilities from Model R4
+lda_pred_r4 <- predict(lda_model_r4, newdata = test_data)
+probs_r4_left <- lda_pred_r4$posterior[, "Left"]  # Probabilities for "Left" class
+```
+
+
+```{r}
+# --- Threshold = 0.4 ---
+pred_r4_th0.4 <- ifelse(probs_r4_left > 0.4, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.4:\n")
+print(table(pred_r4_th0.4, test_data$Status))
+cat("Prediction Accuracy (0.4):", mean(pred_r4_th0.4 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# --- Threshold = 0.5 ---
+pred_r4_th0.5 <- ifelse(probs_r4_left > 0.5, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.5:\n")
+print(table(pred_r4_th0.5, test_data$Status))
+cat("Prediction Accuracy (0.5):", mean(pred_r4_th0.5 == test_data$Status), "\n\n")
+```
+
+
+```{r}
+# --- Threshold = 0.6 ---
+pred_r4_th0.6 <- ifelse(probs_r4_left > 0.6, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.6:\n")
+print(table(pred_r4_th0.6, test_data$Status))
+cat("Prediction Accuracy (0.6):", mean(pred_r4_th0.6 == test_data$Status), "\n\n")
+
+```
+
+
+```{r}
+# Create a data frame to summarize thresholds and accuracy
+lda_threshold_results <- data.frame(
+  Threshold = c(0.4, 0.5, 0.6),
+  Accuracy = c(0.7989214, 0.798151, 0.7942989)
+)
+
+# View the summary table
+print(lda_threshold_results)
+
+```
+
+ - We evaluated the LDA Model R4 across multiple probability thresholds and found that a threshold of **0.4** yielded the highest prediction accuracy (approximately **79.89%**), making it the most effective cutoff for classifying customers who are likely to leave.
+ 
+ 
+# **5.Quadratic Discriminant Analysis**
+
+ 
+ - We encountered the error `rank deficiency in group Current` while building the QDA full model, which typically occurs when predictors are highly correlated or some factor levels have very few observations. To resolve this, we removed or replaced problematic variables to ensure the model runs without errors.
+
+ - Quadratic Discriminant Analysis (QDA) is very sensitive to multicollinearity and low variation in predictor levels, which can cause errors if some variables are too similar or rarely used.
+
+
+
+
+```{r}
+# Model Q1
+qda_q1 <- qda(Status ~ SeniorCitizen + Partner + Dependents + PhoneService +
+              InternetService + Contract + PaperlessBilling +
+              PaymentMethod + MonthlyCharges + Gender,
+              data = train_data)
+```
+
+
+```{r}
+# Predict probabilities from Q1
+qda_pred_q1 <- predict(qda_q1, newdata = test_data)
+qda_probs_q1 <- qda_pred_q1$posterior[, "Left"]
+
+# ROC & AUC for Q1
+roc_q1 <- roc(response = test_data$Status,
+              predictor = qda_probs_q1,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+# Plot ROC curve
+plot(roc_q1, main = "ROC Curve – QDA Model Q1", col = "darkblue", lwd = 2)
+# Print AUC
+auc(roc_q1)
+
+```
+
+ - Area under the curve: 0.8266
+
+```{r}
+# Model Q2
+qda_q2 <- qda(Status ~ SeniorCitizen + Partner + Dependents + PhoneService +
+              InternetService + Contract + PaperlessBilling +
+              PaymentMethod + Tenure + Gender,
+              data = train_data)
+
+
+```
+
+
+```{r}
+# Predict probabilities from Q2
+qda_pred_q2 <- predict(qda_q2, newdata = test_data)
+qda_probs_q2 <- qda_pred_q2$posterior[, "Left"]
+
+# ROC & AUC for Q2
+roc_q2 <- roc(response = test_data$Status,
+              predictor = qda_probs_q2,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+# Plot ROC curve
+plot(roc_q2, main = "ROC Curve – QDA Model Q2", col = "darkgreen", lwd = 2)
+# Print AUC
+auc(roc_q2)
+
+```
+
+ 
+ - Area under the curve: 0.8266
+ 
+```{r}
+# Model Q3
+qda_q3 <- qda(Status ~ SeniorCitizen + Partner + Dependents + PhoneService +
+         InternetService + Contract + PaperlessBilling +
+         PaymentMethod + MonthlyCharges + Tenure + Gender,data = train_data)
+```
+
+
+```{r}
+# Predict probabilities from Q3
+qda_pred_q3 <- predict(qda_q3, newdata = test_data)
+
+# Extract probability for class "Left"
+qda_probs_q3 <- qda_pred_q3$posterior[, "Left"]
+
+# Compute ROC and AUC
+library(pROC)
+roc_q3 <- roc(response = test_data$Status,
+              predictor = qda_probs_q3,
+              levels = c("Current", "Left"),
+              direction = "<")
+
+# Plot ROC curve
+plot(roc_q3, main = "ROC Curve – QDA Model Q3", col = "purple", lwd = 2)
+
+# Show AUC value
+auc(roc_q3)
+
+```
+
+ - Area under the curve: 0.8407
+ - We will proceed with model with highest AUC which in this case is model Q3 with AUC of 0.8407.
+ 
+ - Summary output for Model Q3
+ 
+```{r}
+qda_q3
+```
+
+
+
+
+```{r}
+# Get posterior probabilities for "Left"
+qda_pred_q3 <- predict(qda_q3, newdata = test_data)
+qda_probs_q3_left <- qda_pred_q3$posterior[, "Left"]
+```
+
+
+```{r}
+# Threshold = 0.4
+pred_q3_th0.4 <- ifelse(qda_probs_q3_left > 0.4, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.4:\n")
+print(table(pred_q3_th0.4, test_data$Status))
+cat("Prediction Accuracy (0.4):", round(mean(pred_q3_th0.4 == test_data$Status), 4), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.5
+pred_q3_th0.5 <- ifelse(qda_probs_q3_left > 0.5, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.5:\n")
+print(table(pred_q3_th0.5, test_data$Status))
+cat("Prediction Accuracy (0.5):", round(mean(pred_q3_th0.5 == test_data$Status), 4), "\n\n")
+```
+
+
+```{r}
+# Threshold = 0.6
+pred_q3_th0.6 <- ifelse(qda_probs_q3_left > 0.6, "Left", "Current")
+cat("Confusion Matrix – Threshold 0.6:\n")
+print(table(pred_q3_th0.6, test_data$Status))
+cat("Prediction Accuracy (0.6):", round(mean(pred_q3_th0.6 == test_data$Status), 4), "\n\n")
+
+```
+
+
+```{r}
+# Create data frame 
+qda_q3_accuracy_df <- data.frame(
+  Threshold = c(0.4, 0.5, 0.6),
+  Accuracy = c(0.7550, 0.7658, 0.7781)
+)
+
+# View it
+print(qda_q3_accuracy_df)
+
+```
+
+ - The table above summarizes the prediction accuracy of QDA Model Q3 for different probability thresholds. The best performance is observed at a threshold of 0.6, yielding a prediction accuracy of 77.81%.
+ 
+ 
+# **6.Decision Trees**
+
+```{r}
+library(tree)  # For building decision trees
+
+```
+
+
+```{r}
+# Build decision tree model
+dt_model <- tree(Status ~ SeniorCitizen + Partner + Dependents + Tenure +
+                 PhoneService + MultipleLines + InternetService + OnlineSecurity +
+                 DeviceProtection + Contract + PaperlessBilling + PaymentMethod +
+                 MonthlyCharges + TotalCharges + Gender,
+                 data = train_data)
+
+# Summary of the model
+summary(dt_model)
+
+# Plot the tree
+plot(dt_model)
+text(dt_model, pretty = 0)
+
+```
+
+
+```{r}
+# Predict class labels
+dt_preds <- predict(dt_model, newdata = test_data, type = "class")
+
+# Confusion matrix
+confusion_matrix_dt <- table(dt_preds, test_data$Status)
+print(confusion_matrix_dt)
+
+# Prediction accuracy
+accuracy_dt <- mean(dt_preds == test_data$Status)
+cat("Prediction Accuracy (Unpruned Tree):", accuracy_dt, "\n")
+
+```
+
+ - The unpruned decision tree achieved a prediction accuracy of **78.659%**, correctly classifying most "Current" customers with some misclassification on "Left" customers.
+
+```{r}
+# Step 1: Perform cross-validation to determine optimal size
+cv.churn <- cv.tree(dt_model, FUN = prune.misclass)
+
+# Step 2: Plot tree size vs misclassification error
+plot(cv.churn$size, cv.churn$dev, type = "b",
+     xlab = "Tree Size (Number of Terminal Nodes)",
+     ylab = "Cross-Validation Error",
+     main = "CV Error vs. Tree Size")
+
+# Step 3: Identify optimal tree size
+best_size <- cv.churn$size[which.min(cv.churn$dev)]
+cat("Best tree size:", best_size, "\n")
+
+```
+We used cross-validation to determine the optimal complexity of the decision tree model. The CV Error vs. Tree Size plot indicated that a tree with 6 terminal nodes minimizes cross-validation error.
+
+```{r}
+# Prune the tree to the best size (6 terminal nodes)
+pruned_churn_tree <- prune.tree(dt_model, best = 6)
+
+# Plot the pruned tree
+plot(pruned_churn_tree)
+text(pruned_churn_tree, pretty = 0)
+
+# Make predictions on test set
+pruned_preds <- predict(pruned_churn_tree, newdata = test_data, type = "class")
+
+# Create confusion matrix
+conf_matrix_pruned <- table(Predicted = pruned_preds, Actual = test_data$Status)
+print(conf_matrix_pruned)
+
+# Calculate prediction accuracy
+accuracy_pruned <- mean(pruned_preds == test_data$Status)
+cat("Prediction Accuracy (Pruned Tree - Size 6):", round(accuracy_pruned, 4), "\n")
+
+```
+ 
+ - This pruned model balances complexity and performance, avoiding overfitting while still providing accuracy of **78.66%**
+ 
+
+
+
+ - Bagging and Random Forest will hlep us to understand important predictors.
+ 
+```{r}
+# Load required library
+library(randomForest)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# ------------------------- #
+# 1. Bagging Model (mtry = total predictors)
+# ------------------------- #
+
+bag_model <- randomForest(Status ~ ., 
+                          data = train_data, 
+                          mtry = ncol(train_data) - 1,  # all predictors
+                          importance = TRUE, 
+                          ntree = 500)
+
+# Predict on test set
+bag_preds <- predict(bag_model, newdata = test_data)
+
+# Confusion Matrix and Accuracy
+cat("Confusion Matrix – Bagging:\n")
+print(table(Predicted = bag_preds, Actual = test_data$Status))
+
+bag_accuracy <- mean(bag_preds == test_data$Status)
+cat("Prediction Accuracy (Bagging):", round(bag_accuracy, 4), "\n\n")
+
+# Variable Importance Plot
+varImpPlot(bag_model, main = "Variable Importance – Bagging")
+
+```
+
+
+```{r}
+# ------------------------- #
+# 2. Random Forest Model (mtry = √p)
+# ------------------------- #
+
+rf_model <- randomForest(Status ~ ., 
+                         data = train_data, 
+                         mtry = floor(sqrt(ncol(train_data) - 1)), 
+                         importance = TRUE, 
+                         ntree = 500)
+
+# Predict on test data
+rf_preds <- predict(rf_model, newdata = test_data)
+
+# Confusion Matrix and Accuracy
+cat("Confusion Matrix – Random Forest:\n")
+print(table(Predicted = rf_preds, Actual = test_data$Status))
+
+rf_accuracy <- mean(rf_preds == test_data$Status)
+cat("Prediction Accuracy (Random Forest):", round(rf_accuracy, 4), "\n\n")
+
+# Variable Importance Plot
+varImpPlot(rf_model, main = "Variable Importance – Random Forest")
+
+```
+
+
+Bagging – Variable Importance
+
+ - Observation: TotalCharges, Contract, and Tenure are the top predictors of churn, with the highest impact on both model accuracy and Gini index.
+
+Random Forest – Variable Importance
+
+ - Observation: Tenure, TotalCharges, and MonthlyCharges are consistently the most important features in reducing model error, followed closely by Contract.
+
+Lets try get to get best accuracy using important predictors.
+
+```{r}
+# Load necessary library
+library(tree)
+
+# --------------------------
+# Step 1: Build Model D1
+# --------------------------
+model_d1 <- tree(Status ~ TotalCharges + Contract + Tenure + MonthlyCharges,
+                 data = train_data)
+
+# Summary
+summary(model_d1)
+
+# Plot the tree
+plot(model_d1)
+text(model_d1, pretty = 0)
+```
+
+
+```{r}
+# --------------------------
+# Step 2: Predict & Accuracy
+# --------------------------
+pred_d1 <- predict(model_d1, newdata = test_data, type = "class")
+
+# Confusion Matrix
+conf_matrix_d1 <- table(Predicted = pred_d1, Actual = test_data$Status)
+print(conf_matrix_d1)
+
+# Accuracy
+accuracy_d1 <- mean(pred_d1 == test_data$Status)
+cat("Prediction Accuracy (Unpruned Tree – Model D1):", round(accuracy_d1, 4), "\n")
+```
+
+
+```{r}
+# --------------------------
+# Step 3: Cross-Validation
+# --------------------------
+set.seed(123)
+cv_d1 <- cv.tree(model_d1, FUN = prune.misclass)
+
+# Plot CV Error vs Tree Size
+plot(cv_d1$size, cv_d1$dev, type = "b",
+     xlab = "Tree Size (Terminal Nodes)",
+     ylab = "Cross-Validation Error",
+     main = "CV Error vs Tree Size – Model D1")
+
+# Get best size
+best_size_d1 <- cv_d1$size[which.min(cv_d1$dev)]
+cat("Best tree size for Model D1:", best_size_d1, "\n")
+```
+
+
+```{r}
+# --------------------------
+# Step 4: Prune the tree
+# --------------------------
+pruned_d1 <- prune.tree(model_d1, best = best_size_d1)
+
+# Plot pruned tree
+plot(pruned_d1)
+text(pruned_d1, pretty = 0)
+
+# Predict using pruned tree
+pruned_d1_preds <- predict(pruned_d1, newdata = test_data, type = "class")
+
+# Confusion Matrix
+conf_matrix_pruned_d1 <- table(Predicted = pruned_d1_preds, Actual = test_data$Status)
+print(conf_matrix_pruned_d1)
+
+# Accuracy
+accuracy_pruned_d1 <- mean(pruned_d1_preds == test_data$Status)
+cat("Prediction Accuracy (Pruned Tree – Model D1):", round(accuracy_pruned_d1, 4), "\n")
+
+```
+
+
+```{r}
+# Load necessary library
+library(tree)
+
+# --------------------------
+# Step 1: Build Model D2
+# --------------------------
+model_d2 <- tree(Status ~ TotalCharges + Contract + Tenure + MonthlyCharges +
+                             InternetService + OnlineSecurity,
+                 data = train_data)
+
+# Summary
+summary(model_d2)
+
+# Plot the tree
+plot(model_d2)
+text(model_d2, pretty = 0)
+```
+
+
+```{r}
+# --------------------------
+# Step 2: Predict & Accuracy
+# --------------------------
+pred_d2 <- predict(model_d2, newdata = test_data, type = "class")
+
+# Confusion Matrix
+conf_matrix_d2 <- table(Predicted = pred_d2, Actual = test_data$Status)
+print(conf_matrix_d2)
+
+# Accuracy
+acc_d2 <- mean(pred_d2 == test_data$Status)
+cat("Prediction Accuracy (Unpruned Tree – Model D2):", round(acc_d2, 4), "\n")
+```
+
+
+
+```{r}
+# --------------------------
+# Step 3: Cross-Validation
+# --------------------------
+set.seed(123)
+cv_d2 <- cv.tree(model_d2, FUN = prune.misclass)
+
+# Plot CV Error vs Tree Size
+plot(cv_d2$size, cv_d2$dev, type = "b",
+     xlab = "Tree Size (Terminal Nodes)",
+     ylab = "Cross-Validation Error",
+     main = "CV Error vs Tree Size – Model D2")
+
+# Get best size
+best_size_d2 <- cv_d2$size[which.min(cv_d2$dev)]
+cat("Best tree size for Model D2:", best_size_d2, "\n")
+```
+
+
+```{r}
+# --------------------------
+# Step 4: Prune the Tree
+# --------------------------
+pruned_d2 <- prune.tree(model_d2, best = best_size_d2)
+
+# Plot pruned tree
+plot(pruned_d2)
+text(pruned_d2, pretty = 0)
+
+# Predict using pruned tree
+pruned_d2_preds <- predict(pruned_d2, newdata = test_data, type = "class")
+
+# Confusion Matrix
+conf_matrix_pruned_d2 <- table(Predicted = pruned_d2_preds, Actual = test_data$Status)
+print(conf_matrix_pruned_d2)
+
+# Accuracy
+accuracy_pruned_d2 <- mean(pruned_d2_preds == test_data$Status)
+cat("Prediction Accuracy (Pruned Tree – Model D2):", round(accuracy_pruned_d2, 4), "\n")
+
+```
+
+
+```{r}
+# Create a dataframe with prediction accuracies for different Decision Tree models
+dt_results <- data.frame(
+  Model = c("Full Model (Unpruned)", 
+            "Full Model (Pruned)",
+            "Model D1 (Unpruned)", 
+            "Model D1 (Pruned)", 
+            "Model D2 (Unpruned)", 
+            "Model D2 (Pruned)"),
+  Accuracy = c(0.7866, 0.7866, 0.782, 0.782, 0.7866, 0.7866)
+)
+
+# View the results
+print(dt_results)
+
+```
+
+ - We will finalize Model D2 (Pruned) as our Decision Tree model because it achieves high accuracy of 78.66% using fewer variables, making it optimal for interpretability and business presentation.
+ 
+ 
+# **7. Comparison across Methods**
+
+Compare across methods (skip the model built with decision trees) used above and report your best method based on ROC plots.
+
+
+```{r}
+# Create AUC comparison dataframe
+auc_comparison <- data.frame(
+  Method = c("Logistic Regression (Model 2)", 
+             "Naive Bayes (Model N2)", 
+             "LDA (Model R4)", 
+             "QDA (Model Q3)"),
+  AUC = c(0.8465, 0.8316, 0.8405, 0.8407)
+)
+
+# View the dataframe
+print(auc_comparison)
+
+```
+
+
+ - This table compares the Area Under the Curve (AUC) values across classification methods (excluding Decision Trees). The Logistic Regression Model 2 yielded the highest AUC of 0.8465, indicating it has the best discriminatory power among all models.
+
+
+Which model does the best in terms of the prediction accuracy on the test set? Include the decision tree model here.
+ 
+```{r}
+# Create prediction accuracy dataframe
+prediction_accuracy <- data.frame(
+  Method = c("Logistic Regression (Model 2)", 
+             "Naive Bayes (Model N2)", 
+             "LDA (Model R4)", 
+             "QDA (Model Q3)",
+             "Decision Tree (Model D2: pruned)"),
+  Pred_accuracy = c(0.8028, 0.7904, 0.7989, 0.7781, 0.7866)
+)
+
+# View the dataframe
+print(prediction_accuracy)
+
+```
+
+ 
+ - Logistic Regression (Model 2) achieves the highest prediction accuaracy 80.28% (0.8028), indicating the best overall performance among the models tested.
+
+# **8. Business Analysis and Recommendations**
+
+In this section, we will use the Implementation_Data file to generate business recommendations. This data file has information on 500 current customers. Use your logistic regression model with your best threshold (identified in part 2) to answer the following questions:
+
+#### In terms of relative importance how would you rate the predictors in your model.
+
+
+```{r}
+# Load the dataset
+load("Implementation_Data.rda")
+
+
+```
+
+
+```{r}
+str(Implementation_Data)
+head(Implementation_Data)
+
+
+```
+
+
+```{r}
+# Convert SeniorCitizen column to a factor in the implementation dataset
+# This ensures consistency with the model which was trained using SeniorCitizen as a factor
+Implementation_Data <- Implementation_Data %>%
+  mutate(SeniorCitizen = as.factor(SeniorCitizen))
+
+```
+
+
+```{r}
+# Get summary of the logistic regression model (Model 2)
+summary(log_model_reduced)
+
+```
+
+
+ - In terms of relative importance, the predictors with the strongest statistical significance (smallest p-values) in the model are Tenure, Contract, TotalCharges, OnlineSecurity, and InternetService. These variables have the most substantial impact on the predicted outcome and should be prioritized for business action and strategy. Other significant contributors include SeniorCitizen, PhoneService, MultipleLines, PaperlessBilling, and PaymentMethod (Electronic check).
+ 
+ 
+#### How many customers does your model predict are in danger of leaving?
+
+```{r}
+
+# Step 1: Make probability predictions using your best logistic model (Model 2)
+impl_probs <- predict(log_model_reduced, newdata = Implementation_Data, type = "response")
+
+# Step 2: Apply the best threshold (0.5) to classify
+impl_predictions <- ifelse(impl_probs > 0.5, "Left", "Current")
+
+# Step 3: Count how many customers are predicted to leave
+table(impl_predictions)
+num_at_risk <- sum(impl_predictions == "Left")
+cat("Number of customers predicted to leave:", num_at_risk, "\n")
+
+```
+ 
+ - Using our best-performing logistic regression model (Model 2) and a probability threshold of 0.5, we identified that:
+
+ - 111 out of 500 current customers are predicted to be at risk of leaving the company.This represents 22.2% of the current customer base from the implementation dataset.
+
+
+#### What is the predicted loss in revenue per month if all these customers leave? This reflects the loss if no action is taken.?
+
+```{r}
+
+# Step 1: Predict probabilities using Logistic Regression Model 2
+log_probs_impl <- predict(log_model_reduced, newdata = Implementation_Data, type = "response")
+
+# Step 2: Assign predicted classes using threshold = 0.5
+predicted_classes <- ifelse(log_probs_impl > 0.5, "Left", "Current")
+
+# Step 3: Filter customers predicted to leave
+customers_to_leave <- Implementation_Data[predicted_classes == "Left", ]
+
+# Step 4: Calculate total predicted monthly revenue loss
+total_revenue_loss <- sum(customers_to_leave$MonthlyCharges)
+
+# Step 5: Print result
+cat("Total predicted monthly revenue loss if all predicted-to-leave customers leave: $", round(total_revenue_loss, 2), "\n")
+
+```
+
+
+##### As a business manager, which factors would you focus on (for example you could invest in offering some incentives or promotions) to decrease the chances of customers leaving?
+
+To answer this, we'll look at the significant predictors from our logistic regression model (Model 2), especially those that are:
+
+ - Actionable (can be influenced by the business)
+ - Strongly associated with leaving, based on the model's coefficients and p-values
+ 
+##### Key Focus Areas for Management
+
+Based on the logistic regression results and business insight, the following predictors should be prioritized for customer retention strategies:
+
+##### 1. **Contract Type**
+Customers on Month-to-month contracts are far more likely to leave.
+**Action:** Offer discounts or perks to encourage switching to 1-year or 2-year contracts.
+
+##### 2. **Online Security**
+Customers without online security services tend to leave more frequently.
+**Action:** Provide free trials or bundle online security features as add-ons to retain these customers.
+
+##### 3. **Internet Service**
+Customers using Fiber Optic or with no internet service are at higher risk of leaving.
+**Action:** Promote stable, reliable internet plans, such as DSL or upgraded service packages.
+
+##### 4. **Payment Method**
+Customers paying via Electronic Checks are more likely to leave.
+**Action:** Encourage auto-pay or card payment methods by offering small incentives or bill credits.
+
+##### 5. **Paperless Billing**
+Customers not enrolled in paperless billing are more likely to leave.
+**Action:** Promote paperless billing with rewards or credits to drive adoption and retention.
+
+
+
+
+
+
+
+#### Propose an incentive scheme to your manager that can help reduce the loss in revenue by retaining some (or all) customers.
+
+**Incentive Scheme Proposal to Reduce Customer Loss**
+ - Based on our logistic regression model (Model 2), we identified 111 current customers who are at risk of leaving the company. These customers contribute approximately $8,883.75 in monthly revenue. If no action is taken, this revenue will be lost.
+
+ - To mitigate this, we propose the following targeted incentive scheme:
+
+**Proposed Incentive**
+
+ - Offer a $20 incentive (e.g., bill credit, one-time discount, or premium add-on) to each at-risk customer to encourage retention. Options could include:
+
+ - $20 off the next bill
+ - Free one-month premium service or support
+ - Loyalty rewards for contract renewal 
+
+**Expected Outcome**
+
+Assuming a 50% retention rate, we expect to retain around half of the at-risk customers, preserving a portion of the monthly revenue.
+
+
+
+
+
+#### Provide justification by evaluating costs and benefits of your incentive scheme. Costs will be the dollar amount in incentives given (for example). Benefits will be the revenues from these customers if they stay with your company. Compute the net benefits from your incentive scheme. Make a case in your report to your upper management for implementing your scheme.
+
+```{r}
+# Step 1: Load the implementation dataset 
+
+# Step 2: Ensure variable types match training data
+Implementation_Data <- Implementation_Data %>%
+  mutate(
+    SeniorCitizen = as.factor(SeniorCitizen),
+    Tenure = as.numeric(Tenure),
+    MonthlyCharges = as.numeric(MonthlyCharges),
+    TotalCharges = as.numeric(TotalCharges)
+  )
+
+# Step 3: Predict probabilities using the final logistic regression model
+impl_probs <- predict(log_model_reduced, newdata = Implementation_Data, type = "response")
+
+# Step 4: Assign class labels based on best threshold (e.g., 0.5)
+impl_predicted_class <- ifelse(impl_probs >= 0.5, "Left", "Current")
+
+# Step 5: Create a dataframe with predictions
+Implementation_Data$Predicted_Status <- impl_predicted_class
+Implementation_Data$Prob_Left <- impl_probs
+
+# Step 6: Filter customers predicted to leave
+predicted_leavers <- Implementation_Data %>%
+  filter(Predicted_Status == "Left")
+
+# Step 7: Cost-benefit calculation
+incentive_per_customer <- 20         # Proposed incentive in USD
+estimated_retention_rate <- 0.5      # Assume 50% retention with incentives
+
+# Total predicted monthly revenue from customers at risk
+total_monthly_revenue <- sum(predicted_leavers$MonthlyCharges)
+
+# Estimated retained revenue (50% of at-risk customers)
+estimated_retained_revenue <- total_monthly_revenue * estimated_retention_rate
+
+# Incentive cost = $20 * number of at-risk customers
+total_incentive_cost <- nrow(predicted_leavers) * incentive_per_customer
+
+# Net benefit
+net_benefit <- estimated_retained_revenue - total_incentive_cost
+
+# Output
+cat("Number of At-Risk Customers:", nrow(predicted_leavers), "\n")
+cat("Total Monthly Revenue at Risk: $", round(total_monthly_revenue, 2), "\n")
+cat("Estimated Retained Revenue (50%): $", round(estimated_retained_revenue, 2), "\n")
+cat("Total Incentive Cost: $", total_incentive_cost, "\n")
+cat("Net Benefit: $", round(net_benefit, 2), "\n")
+
+
+```
+**Recommendation to Management**
+ - To mitigate the risk of losing approximately $8,883.75 in monthly revenue, we recommend implementing a retention incentive of $20 per customer for the 111 at-risk customers identified by our model.
+
+ - By doing so:
+
+ - We expect to retain at least 50% of these customers,
+ - Resulting in a retained revenue of $4,441.88,
+ - At a cost of $2,220.00 in incentives,
+ - Yielding a net monthly benefit of $2,221.88.
+ - This plan is cost-effective, data-driven, and aligned with our retention goals. It balances short-term costs with long-term revenue preservation and should be approved for immediate implementation.
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
+
+```{r}
+```
+
