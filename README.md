@@ -1,4 +1,3 @@
-### B. **customer-churn-prediction**
 ```markdown
 # Predictive Analytics for Customer Retention: A Churn Analysis
 
